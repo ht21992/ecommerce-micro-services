@@ -37,9 +37,11 @@ DJANGO_SECRET_KEY=devsecret
 
 Example frontend .env (should be on frontend/.env)
 
+```
 VITE_ORDER_API=http://localhost:8001/api
 VITE_INVENTORY_API=http://localhost:8002/api
 VITE_PAYMENT_API=http://localhost:8003/api
+```
 
 
 
