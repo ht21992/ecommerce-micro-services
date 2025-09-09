@@ -1,0 +1,145 @@
+# docker-compose.yml (v3.8)
+version: "3.8"
+services:
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    ports:
+      - "15672:15672" # management UI
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  # Postgres for order service
+  postgres-order:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_order_data:/var/lib/postgresql/data
+
+  # Postgres for inventory
+  postgres-inventory:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_inventory_data:/var/lib/postgresql/data
+
+  # Postgres for payment
+  postgres-payment:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_payment_data:/var/lib/postgresql/data
+
+  order:
+    build: ./order_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-order
+    ports:
+      - "8001:8000"
+    command: /app/entrypoint.sh
+
+  order-worker:
+    build: ./order_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-order
+    command: celery -A order_service worker -Q order-queue --loglevel=info
+    # mounts and shared code same as order
+
+  order-beat:
+    build: ./order_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+    command: celery -A order_service beat --loglevel=info
+
+  inventory:
+    build: ./inventory_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-inventory
+    ports:
+      - "8002:8000"
+    command: /app/entrypoint.sh
+
+  inventory-worker:
+    build: ./inventory_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-inventory
+    command: celery -A inventory_service worker -Q inventory-queue --loglevel=info
+
+
+  payment:
+    build: ./payment_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-payment
+    ports:
+      - "8003:8000"
+    command: /app/entrypoint.sh
+
+  payment-worker:
+    build: ./payment_service
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres-payment
+    command: celery -A payment_service worker -Q payment-queue --loglevel=info
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - order
+      - inventory
+      - payment
+
+volumes:
+  postgres_order_data:
+  postgres_inventory_data:
+  postgres_payment_data:
